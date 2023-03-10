@@ -21,6 +21,8 @@ class JokesViewController: UITableViewController {
     private var jokes: [Joke] = [] {
         didSet { tableView.reloadData() }
     }
+    
+    private var cancellables = Set<AnyCancellable>()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -39,7 +41,64 @@ class JokesViewController: UITableViewController {
     }
     
     private func updateJokes() {
+        refreshView.update(isRefreshing: true)
+        
+        loadData()
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { [weak self] completion in
+                self?.refreshView.update(isRefreshing: false)
+                
+                switch completion {
+                case .finished: break
+                case .failure(let error):
+                    self?.showAlert(title: "Error", message: error.localizedDescription)
+                }
+            }, receiveValue: { [weak self] joke in
+                self?.jokes = [joke]
+            })
+            .store(in: &cancellables)
+        
+    }
+}
 
+extension JokesViewController {
+    private func loadData() -> AnyPublisher<Joke, Error> {
+        loadCategories()
+            .flatMap(loadJoke)
+            .eraseToAnyPublisher()
+    }
+
+    private func loadCategories() -> AnyPublisher<[Category], Error> {
+        let url = baseURL.appending(path: "categories")
+        
+        return URLSession.shared.dataTaskPublisher(for: url)
+            .tryMap { result in
+                guard let response = result.response as? HTTPURLResponse, response.statusCode == 200 else {
+                    throw URLError(.badServerResponse)
+                }
+                return result.data
+            }
+            .decode(type: [String].self, decoder: JSONDecoder())
+            .map { categories in
+                categories.map { Category(title: $0) }
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    private func loadJoke(categories: [Category]) -> AnyPublisher<Joke, Error> {
+        var url = baseURL.appending(path: "random")
+        let queryItems = [URLQueryItem(name: "category", value: categories.first?.title)]
+        url.append(queryItems: queryItems)
+        
+        return URLSession.shared.dataTaskPublisher(for: url)
+            .tryMap { result in
+                guard let response = result.response as? HTTPURLResponse, response.statusCode == 200 else {
+                    throw URLError(.badServerResponse)
+                }
+                return result.data
+            }
+            .decode(type: Joke.self, decoder: JSONDecoder())
+            .eraseToAnyPublisher()
     }
 }
 
