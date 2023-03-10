@@ -53,43 +53,47 @@ class JokesViewController: UITableViewController {
                 case .failure(let error):
                     self?.showAlert(title: "Error", message: error.localizedDescription)
                 }
-            }, receiveValue: { [weak self] joke in
-                self?.jokes = [joke]
+            }, receiveValue: { [weak self] jokes in
+                self?.jokes = jokes
             })
             .store(in: &cancellables)
-        
     }
 }
 
 extension JokesViewController {
-    private func loadData() -> AnyPublisher<Joke, Error> {
+    private func loadData() -> AnyPublisher<[Joke], Error> {
         loadCategories()
-            .flatMap(loadJoke)
+            .flatMap(loadJokes)
             .eraseToAnyPublisher()
     }
-
+    
     private func loadCategories() -> AnyPublisher<[Category], Error> {
         let url = baseURL.appending(path: "categories")
-        
-        return URLSession.shared.dataTaskPublisher(for: url)
-            .tryMap { result in
-                guard let response = result.response as? HTTPURLResponse, response.statusCode == 200 else {
-                    throw URLError(.badServerResponse)
-                }
-                return result.data
-            }
-            .decode(type: [String].self, decoder: JSONDecoder())
-            .map { categories in
+        return load(url: url)
+            .map { (categories: [String]) in
                 categories.map { Category(title: $0) }
             }
             .eraseToAnyPublisher()
     }
     
-    private func loadJoke(categories: [Category]) -> AnyPublisher<Joke, Error> {
+    private func loadJokes(categories: [Category]) -> AnyPublisher<[Joke], Error> {
+        let publishers: [AnyPublisher<Joke, Error>] = categories.map(loadJoke)
+        
+        return Publishers.MergeMany(publishers)
+            .prefix((1...publishers.count).randomElement()!)
+            .collect()
+            .eraseToAnyPublisher()
+    }
+    
+    private func loadJoke(category: Category) -> AnyPublisher<Joke, Error> {
         var url = baseURL.appending(path: "random")
-        let queryItems = [URLQueryItem(name: "category", value: categories.first?.title)]
+        let queryItems = [URLQueryItem(name: "category", value: category.title)]
         url.append(queryItems: queryItems)
         
+        return load(url: url)
+    }
+    
+    private func load<T: Decodable>(url: URL) -> AnyPublisher<T, Error> {
         return URLSession.shared.dataTaskPublisher(for: url)
             .tryMap { result in
                 guard let response = result.response as? HTTPURLResponse, response.statusCode == 200 else {
@@ -97,10 +101,11 @@ extension JokesViewController {
                 }
                 return result.data
             }
-            .decode(type: Joke.self, decoder: JSONDecoder())
+            .decode(type: T.self, decoder: JSONDecoder())
             .eraseToAnyPublisher()
     }
 }
+
 
 extension JokesViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
