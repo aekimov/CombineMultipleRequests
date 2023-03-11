@@ -64,6 +64,7 @@ extension JokesViewController {
     private func loadData() -> AnyPublisher<[Joke], Error> {
         loadCategories()
             .flatMap(loadJokes)
+            .replaceEmpty(with: [Joke(value: "No data available to display")])
             .eraseToAnyPublisher()
     }
     
@@ -78,10 +79,10 @@ extension JokesViewController {
     
     private func loadJokes(categories: [Category]) -> AnyPublisher<[Joke], Error> {
         let publishers: [AnyPublisher<Joke, Error>] = categories.map(loadJoke)
+        let count = publishers.isEmpty ? 0 : .random(in: 1...publishers.count)
         
         return Publishers.MergeMany(publishers)
-            .prefix((1...publishers.count).randomElement()!)
-            .collect()
+            .collect(count)
             .eraseToAnyPublisher()
     }
     
@@ -105,7 +106,6 @@ extension JokesViewController {
             .eraseToAnyPublisher()
     }
 }
-
 
 extension JokesViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
