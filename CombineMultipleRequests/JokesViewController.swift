@@ -17,11 +17,17 @@ class JokesViewController: UITableViewController {
     }()
     
     private let baseURL = URL(string: "https://api.chucknorris.io/jokes")!
-        
-    private var jokes: [Joke] = [] {
-        didSet { tableView.reloadData() }
-    }
     
+    private lazy var dataSource: UITableViewDiffableDataSource<Int, Joke> = {
+        UITableViewDiffableDataSource(tableView: tableView) { tableView, indexPath, model in
+            let cell: UITableViewCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.textLabel?.text = model.value
+            cell.textLabel?.numberOfLines = 0
+            cell.selectionStyle = .none
+            return cell
+        }
+    }()
+        
     private var cancellables = Set<AnyCancellable>()
 
     override func viewDidLoad() {
@@ -34,6 +40,19 @@ class JokesViewController: UITableViewController {
         view.backgroundColor = .white
         tableView.register(UITableViewCell.self)
         tableView.refreshControl = refreshView
+        tableView.dataSource = dataSource
+    }
+    
+    public func display(_ items: [Joke]) {
+        var snapshot = NSDiffableDataSourceSnapshot<Int, Joke>()
+        snapshot.appendSections([0])
+        snapshot.appendItems(items, toSection: 0)
+        
+        if #available(iOS 15.0, *) {
+            dataSource.applySnapshotUsingReloadData(snapshot)
+        } else {
+            dataSource.apply(snapshot)
+        }
     }
     
     @objc private func onRefresh() {
@@ -54,7 +73,7 @@ class JokesViewController: UITableViewController {
                     self?.showAlert(title: "Error", message: error.localizedDescription)
                 }
             }, receiveValue: { [weak self] jokes in
-                self?.jokes = jokes
+                self?.display(jokes)
             })
             .store(in: &cancellables)
     }
@@ -104,24 +123,5 @@ extension JokesViewController {
             }
             .decode(type: T.self, decoder: JSONDecoder())
             .eraseToAnyPublisher()
-    }
-}
-
-extension JokesViewController {
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return jokes.count
-    }
-    
-    override func tableView(
-        _ tableView: UITableView,
-        cellForRowAt indexPath: IndexPath
-    ) -> UITableViewCell {
-        
-        let cell: UITableViewCell = tableView.dequeueReusableCell(for: indexPath)
-        let model = jokes[indexPath.row]
-        cell.textLabel?.text = model.value
-        cell.textLabel?.numberOfLines = 0
-        cell.selectionStyle = .none
-        return cell
     }
 }

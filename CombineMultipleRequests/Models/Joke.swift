@@ -7,6 +7,6 @@
 
 import Foundation
 
-struct Joke: Decodable {
+struct Joke: Decodable, Hashable {
     let value: String
 }
